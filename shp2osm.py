@@ -90,6 +90,40 @@ def fcode(data):
         return keys
     return None
 
+def get_addr_rutgers(data):
+    """Takes a street address like 148 Bevier Rd and splits it out into
+    housenumber and street props"""
+
+    bits = data['bldgaddr_1'].split(' ')
+
+    keys = []
+
+    try:
+        thing = (str(int(bits[0])) == bits[0])
+
+        if thing:
+            keys.append(('addr:housenumber', int(bits[0])))
+            keys.append(('addr:street', ' '.join(bits[1:])))
+            return keys
+        else:
+            return None
+
+
+    except ValueError:
+        return None
+
+def unfloat(data):
+    """takes a couple of rutgers specific keys and unfloats them like bldgnum
+    and campus code"""
+
+    bldgnum = int(float(data['bldgnum']))
+    campuscode = int(float(data['campusco_1']))
+
+    return [
+        ('rutgers:building_no', bldgnum),
+        ('rutgers:campus_code', campuscode)
+    ]
+
 # The most important part of the code: define a set of key/value pairs
 # to iterate over to generate keys. This is a list of two-tuples: first
 # is a 'key', which is only used if the second value is a string. In
@@ -103,25 +137,27 @@ def fcode(data):
 
 
 tag_mapping = [
-    ('ftype', ftype),
-    ('fcode', fcode),
-    ('gnis_name', 'name'),
-    ('elevation', 'ele'),
-    ('gnis_id', 'gnis:feature_id')
+    ('bldgname_1', 'name'),
+    ('auxcode', 'rutgers:auxcode'),
+    ('campusco_1', unfloat),
+    ('city_1', 'addr:city'),
+    ('state_1', 'addr:state'),
+    ('zip_1', 'addr:postcode'),
+    ('bldgaddr_1', get_addr_rutgers)
 ]
 
 # These tags are not exported, even with the source data; this should be
 # used for tags which are usually calculated in a GIS. AREA and LEN are
 # common.
 
-boring_tags = [ 'Shape_Leng', 'Shape_Area', 'AreaSqKm' ]
+boring_tags = [ 'Shape_Leng', 'Shape_Area', 'AreaSqKm']
 
 # Namespace is used to prefix existing data attributes. If 'None', or
 # '--no-source' is set, then source attributes are not exported, only
 # attributes in tag_mapping.
 
-namespace = "NHD"
-#namespace = None
+#namespace = "NHD"
+namespace = None
 
 # Uncomment the "DONT_RUN = False" line to get started.
 
