@@ -40,6 +40,7 @@ will usually suffice.
 
 fixed_tags = {
   'source': 'Rutgers',
+  'building': 'yes',
   'created_by': 'polyshp2osm'
 }
 
@@ -156,8 +157,8 @@ boring_tags = [ 'Shape_Leng', 'Shape_Area', 'AreaSqKm']
 # '--no-source' is set, then source attributes are not exported, only
 # attributes in tag_mapping.
 
-#namespace = "NHD"
-namespace = None
+namespace = "NHD"
+#namespace = None
 
 # Uncomment the "DONT_RUN = False" line to get started.
 
