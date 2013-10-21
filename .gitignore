@@ -1,0 +1,3 @@
+*.swp
+*.osm
+!poly_output.1.osm
