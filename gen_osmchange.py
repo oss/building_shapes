@@ -1,8 +1,8 @@
 import urllib2
 import xml.etree.ElementTree as ET
+import xml.dom.minidom
 import sys
 import Polygon, Polygon.IO
-from pprint import pprint
 from scipy import spatial
 
 class Way():
@@ -10,6 +10,7 @@ class Way():
         self.nodes = []
         self.tags = {}
         self.avg_point = [0, 0]
+        self.attrib = way.attrib
         coords = []
         for nd in way.findall('nd'):
             node = nodes[nd.attrib['ref']]
@@ -80,4 +81,27 @@ for pair in pairs:
     else:
         replace_pairs.append([pair[0], None])
 
-pprint(replace_pairs)
+osmchange_root = ET.Element('osmChange', {'version': "0.3", 'generator': "gen_osmchange"})
+e_create = ET.SubElement(osmchange_root, 'create')
+e_delete = ET.SubElement(osmchange_root, 'delete')
+
+place_id = -1
+for pair in replace_pairs:
+    way = ET.SubElement(e_create, 'way', pair[0].attrib)
+    for node in pair[0].nodes:
+        e_nd = ET.SubElement(way, 'nd', {'ref': str(place_id)})
+        e_node = ET.SubElement(e_create, 'node', node.attrib)
+        e_node.attrib['id'] = str(place_id)
+        place_id -= 1
+        for tag in node.findall('tag'):
+            e_tag = ET.SubElement(e_node, 'tag', tag.attrib)
+            e_node.attrib['id'] = str(place_id)
+            place_id -= 1
+    if pair[1] is not None:
+        for node in pair[1].nodes:
+            d_node = ET.SubElement(e_delete, 'node', {'id': node.attrib['id']})
+        d_way = ET.SubElement(e_delete, 'way', {'id': pair[1].attrib['id']})
+
+
+osmchange_xml = xml.dom.minidom.parseString(ET.tostring(osmchange_root))
+print osmchange_xml.toprettyxml(),
