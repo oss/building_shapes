@@ -17,8 +17,6 @@ class Way():
         for tag in way.findall('tag'):
             self.tags[tag.attrib['k']] = tag.attrib['v']
 
-def make_api_call(location, fmt_url, 
-
 debug = False
 
 base_apiurl = 'http://api.openstreetmap.org' if debug == False else 'http://api06.dev.openstreetmap.org'
@@ -28,17 +26,25 @@ bush_livi = [-74.4736, 40.5096, -74.4332, 40.5283]
 college_ave = [-74.4576, 40.4905, -74.4372, 40.5068]
 cook_douglass = [-74.4453, 40.4777, -74.4276, 40.4887]
 
-response = urllib2.urlopen(boundb_apiurl.format(*bush_livi))
-root = ET.fromstring(response.read())
+locations = [bush_livi, college_ave, cook_douglass]
 
-nodes = {}
+responses = [urllib2.urlopen(boundb_apiurl.format(*location)) for location in locations]
+roots = [ET.fromstring(response.read()) for response in responses]
+
 osm_ways = []
 
-for node in root.findall('node'):
-    nodes[node.attrib['id']] = node
+for root in roots:
+    nodes = {}
+    for node in root.findall('node'):
+        nodes[node.attrib['id']] = node
 
-for way in root.findall('way'):
-    osm_ways.append(Way(way, nodes))
+    for way in root.findall('way'):
+        building = False
+        for tag in way.findall('tag'):
+            if tag.attrib['k'] == "building" and tag.attrib['v'] == "yes":
+                building = True
+        if building:
+            osm_ways.append(Way(way, nodes))
 
 for way in osm_ways:
     pprint(way.nodes)
