@@ -1,6 +1,7 @@
 import urllib2
 import xml.etree.ElementTree as ET
 import sys
+import Polygon, Polygon.IO
 from pprint import pprint
 from scipy import spatial
 
@@ -9,11 +10,16 @@ class Way():
         self.nodes = []
         self.tags = {}
         self.avg_point = [0, 0]
+        coords = []
         for nd in way.findall('nd'):
             node = nodes[nd.attrib['ref']]
             self.nodes.append(node)
-            self.avg_point[0] += float(node.attrib['lon'])
-            self.avg_point[1] += float(node.attrib['lat'])
+            x = float(node.attrib['lon'])
+            y = float(node.attrib['lat'])
+            coords.append([x, y])
+            self.avg_point[0] += x
+            self.avg_point[1] += y
+        self.polygon = Polygon.Polygon(coords)
         self.avg_point[0] /= len(self.nodes)
         self.avg_point[1] /= len(self.nodes)
         for tag in way.findall('tag'):
@@ -64,4 +70,14 @@ for way in our_ways:
     index = osm_tree.query([way.avg_point])[1][0]
     pairs.append([way, osm_ways[index]])
 
-pprint(pairs)
+replace_pairs = []
+for pair in pairs:
+    intersect = pair[0].polygon & pair[1].polygon
+    union = pair[0].polygon | pair[1].polygon
+    jaccard = intersect.area() / union.area()
+    if jaccard >= float(sys.argv[2]) / 100:
+        replace_pairs.append(pair)
+    else:
+        replace_pairs.append([pair[0], None])
+
+pprint(replace_pairs)
