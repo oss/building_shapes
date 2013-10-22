@@ -1,6 +1,8 @@
 import urllib2
 import xml.etree.ElementTree as ET
+import sys
 from pprint import pprint
+from scipy import spatial
 
 class Way():
     def __init__(self, way, nodes):
@@ -16,6 +18,22 @@ class Way():
         self.avg_point[1] /= len(self.nodes)
         for tag in way.findall('tag'):
             self.tags[tag.attrib['k']] = tag.attrib['v']
+
+def make_ways(root):
+    nodes = {}
+    ways = []
+    for node in root.findall('node'):
+        nodes[node.attrib['id']] = node
+
+    for way in root.findall('way'):
+        building = False
+        for tag in way.findall('tag'):
+            if tag.attrib['k'] == "building" and tag.attrib['v'] == "yes":
+                building = True
+        if building:
+            ways.append(Way(way, nodes))
+
+    return ways
 
 debug = False
 
@@ -34,19 +52,16 @@ roots = [ET.fromstring(response.read()) for response in responses]
 osm_ways = []
 
 for root in roots:
-    nodes = {}
-    for node in root.findall('node'):
-        nodes[node.attrib['id']] = node
+    osm_ways.extend(make_ways(root))
 
-    for way in root.findall('way'):
-        building = False
-        for tag in way.findall('tag'):
-            if tag.attrib['k'] == "building" and tag.attrib['v'] == "yes":
-                building = True
-        if building:
-            osm_ways.append(Way(way, nodes))
+osm_tree = spatial.KDTree([way.avg_point for way in osm_ways])
 
-for way in osm_ways:
-    pprint(way.nodes)
-    pprint(way.tags)
-    pprint(way.avg_point)
+our_root = ET.parse(sys.argv[1])
+our_ways = make_ways(our_root)
+
+pairs = []
+for way in our_ways:
+    index = osm_tree.query([way.avg_point])[1][0]
+    pairs.append([way, osm_ways[index]])
+
+pprint(pairs)
