@@ -81,16 +81,14 @@ for pair in pairs:
     else:
         replace_pairs.append([pair[0], None])
 
-osmchange_root = ET.Element('osmChange', {'version': "0.3", 'generator': "gen_osmchange"})
-e_create = ET.SubElement(osmchange_root, 'create')
-e_delete = ET.SubElement(osmchange_root, 'delete')
+josm_root = ET.Element('osmChange', {'version': "0.3", 'generator': "gen_josm"})
 
 place_id = -1
 for pair in replace_pairs:
-    way = ET.SubElement(e_create, 'way', pair[0].attrib)
+    way = ET.SubElement(josm_root, 'way', pair[0].attrib)
     for node in pair[0].nodes:
         e_nd = ET.SubElement(way, 'nd', {'ref': str(place_id)})
-        e_node = ET.SubElement(e_create, 'node', node.attrib)
+        e_node = ET.SubElement(josm_root, 'node', node.attrib)
         e_node.attrib['id'] = str(place_id)
         place_id -= 1
         for tag in node.findall('tag'):
@@ -101,9 +99,11 @@ for pair in replace_pairs:
         e_tag = ET.SubElement(way, 'tag', {'k': key, 'v': pair[0].tags[key]})
     if pair[1] is not None:
         for node in pair[1].nodes:
-            d_node = ET.SubElement(e_delete, 'node', {'id': node.attrib['id']})
-        d_way = ET.SubElement(e_delete, 'way', {'id': pair[1].attrib['id']})
+            d_node = ET.SubElement(josm_root, 'node', {'id': node.attrib['id']})
+            d_node.attrib['action'] = 'delete'
+        d_way = ET.SubElement(josm_root, 'way', {'id': pair[1].attrib['id']})
+        d_way.attrib['action'] = 'delete'
 
 
-osmchange_xml = xml.dom.minidom.parseString(ET.tostring(osmchange_root))
-print osmchange_xml.toprettyxml(),
+josm_xml = xml.dom.minidom.parseString(ET.tostring(josm_root))
+print josm_xml.toprettyxml(),
