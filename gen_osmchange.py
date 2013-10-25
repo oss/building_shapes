@@ -97,6 +97,8 @@ for pair in replace_pairs:
             e_tag = ET.SubElement(e_node, 'tag', tag.attrib)
             e_node.attrib['id'] = str(place_id)
             place_id -= 1
+    for key in pair[0].tags:
+        e_tag = ET.SubElement(way, 'tag', {'k': key, 'v': pair[0].tags[key]})
     if pair[1] is not None:
         for node in pair[1].nodes:
             d_node = ET.SubElement(e_delete, 'node', {'id': node.attrib['id']})
