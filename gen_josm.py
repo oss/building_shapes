@@ -52,6 +52,8 @@ college_ave = [-74.4576, 40.4905, -74.4372, 40.5068]
 cook_douglass = [-74.4453, 40.4777, -74.4276, 40.4887]
 
 locations = [bush_livi, college_ave, cook_douglass]
+bounds = [str(min([location[x] for location in locations])) for x in [0, 1]]
+bounds.extend([str(max([location[x] for location in locations])) for x in [2, 3]])
 
 responses = [urllib2.urlopen(boundb_apiurl.format(*location)) for location in locations]
 roots = [ET.fromstring(response.read()) for response in responses]
@@ -81,20 +83,24 @@ for pair in pairs:
     else:
         replace_pairs.append([pair[0], None])
 
-josm_root = ET.Element('osmChange', {'version': "0.3", 'generator': "gen_josm"})
+josm_root = ET.Element('osm', {'version': "0.5", 'generator': "gen_josm"})
+e_bound = ET.SubElement(josm_root, 'bounds', {'minlat': bounds[0], 'minlon': bounds[1], 'maxlat': bounds[2], 'maxlon': bounds[3], 'origin': 'gen_josm'})
 
 place_id = -1
 for pair in replace_pairs:
-    way = ET.SubElement(josm_root, 'way', pair[0].attrib)
+    nodes = []
     for node in pair[0].nodes:
-        e_nd = ET.SubElement(way, 'nd', {'ref': str(place_id)})
         e_node = ET.SubElement(josm_root, 'node', node.attrib)
         e_node.attrib['id'] = str(place_id)
+        nodes.append(e_node)
         place_id -= 1
         for tag in node.findall('tag'):
             e_tag = ET.SubElement(e_node, 'tag', tag.attrib)
             e_node.attrib['id'] = str(place_id)
             place_id -= 1
+    way = ET.SubElement(josm_root, 'way', pair[0].attrib)
+    for nd in nodes:
+        e_nd = ET.SubElement(way, 'nd', {'ref': nd.attrib['id']})
     for key in pair[0].tags:
         e_tag = ET.SubElement(way, 'tag', {'k': key, 'v': pair[0].tags[key]})
     if pair[1] is not None:
