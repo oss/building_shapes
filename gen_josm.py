@@ -83,7 +83,7 @@ for pair in pairs:
     else:
         replace_pairs.append([pair[0], None])
 
-josm_root = ET.Element('osm', {'version': "0.5", 'generator': "gen_josm"})
+josm_root = ET.Element('osm', {'version': "0.6", 'generator': "gen_josm"})
 e_bound = ET.SubElement(josm_root, 'bounds', {'minlat': bounds[0], 'minlon': bounds[1], 'maxlat': bounds[2], 'maxlon': bounds[3], 'origin': 'gen_josm'})
 
 place_id = -1
@@ -99,6 +99,8 @@ for pair in replace_pairs:
             e_node.attrib['id'] = str(place_id)
             place_id -= 1
     way = ET.SubElement(josm_root, 'way', pair[0].attrib)
+    way.attrib['id'] = str(place_id)
+    place_id -= 1
     for nd in nodes:
         e_nd = ET.SubElement(way, 'nd', {'ref': nd.attrib['id']})
     for key in pair[0].tags:
