@@ -5,7 +5,11 @@ import sys
 import Polygon, Polygon.IO
 from scipy import spatial
 
+
 class Way():
+    """Object representation of ways. Has all nodes and an
+    average point
+    """
     def __init__(self, way, nodes):
         self.nodes = []
         self.tags = {}
@@ -26,7 +30,25 @@ class Way():
         for tag in way.findall('tag'):
             self.tags[tag.attrib['k']] = tag.attrib['v']
 
+    def get_bounds(self):
+        """Find a bouding box around a way"""
+        box = [180, 90, -180, -90]
+        for node in self.nodes:
+            lon = float(node.attrib['lon'])
+            lat = float(node.attrib['lat'])
+            if lon <= box[0]:
+                box[0] = lon
+            if  lat <= box[1]:
+                box[1] = lat
+            if lon >= box[2]:
+                box[2] = lon
+            if lat >= box[3]:
+                box[3] = lat
+        return box
+
+
 def make_ways(root):
+    """Build way objects from the root of an osm file"""
     nodes = {}
     ways = []
     for node in root.findall('node'):
@@ -42,76 +64,138 @@ def make_ways(root):
 
     return ways
 
-debug = False
+def largest_box(boxes):
+    """Find the largest box that surrounds any of the boxes in the list.
+    Otherwise known as a bouding box for boxes
+    """
+    largest = [str(min([box[x] for box in boxes])) for x in [0, 1]]
+    largest.extend([str(max([box[x] for box in boxes])) for x in [2, 3]])
+    return largest
 
-base_apiurl = 'http://api.openstreetmap.org' if debug == False else 'http://api06.dev.openstreetmap.org'
-boundb_apiurl = base_apiurl + '/api/0.6/map?bbox={0},{1},{2},{3}'
+def anything_inside(box, ways):
+    """Check if any of the ways are inside the box"""
+    pass
 
-bush_livi = [-74.4736, 40.5096, -74.4332, 40.5283]
-college_ave = [-74.4576, 40.4905, -74.4372, 40.5068]
-cook_douglass = [-74.4453, 40.4777, -74.4276, 40.4887]
+def get_subdivisions(box, url, ways):
+    """Divide the given box into a list of boxes. Each box will have few enough
+    elements to be queried with the given url (osm max queries is 2000).
 
-locations = [bush_livi, college_ave, cook_douglass]
-bounds = [str(min([location[x] for location in locations])) for x in [0, 1]]
-bounds.extend([str(max([location[x] for location in locations])) for x in [2, 3]])
+    returns: a list of boxes
+    """
+    x0 = box[0]
+    y0 = box[1]
+    x1 = box[2]
+    y1 = box[3]
+    boxes = []
+    try:
+        urllib2.urlopen(url.format(*box))
+        boxes.extend(box)
+    except urllib2.HTTPError:
+        center = [(x1 - x0) / 2.0, (y1 - y0) / 2.0]
+        subdivisions = [
+                        [x0, center[1], center[0], y1],
+                        [center[0], center[1], x1, y1],
+                        [x0, y0, center[0], center[1]],
+                        [center[0], y0, x1, center[1]]]
+        for subdivision in subdivisions:
+            if anything_inside(subdivision, ways):
+                boxes.extend(get_subdivisions(subdivision, url, ways))
+    return boxes
 
-responses = [urllib2.urlopen(boundb_apiurl.format(*location)) for location in locations]
-roots = [ET.fromstring(response.read()) for response in responses]
 
-osm_ways = []
+def get_api_url(debug=False):
+    """Get the osm api url for bounding boxes. To use the debug
+    api, set debug to true. Returns a string that should be formated
+    with each coordinate
+    """
+    base_apiurl = 'http://api.openstreetmap.org' if debug == False else 'http://api06.dev.openstreetmap.org'
+    return base_apiurl + '/api/0.6/map?bbox={0},{1},{2},{3}'
 
-for root in roots:
-    osm_ways.extend(make_ways(root))
-
-osm_tree = spatial.KDTree([way.avg_point for way in osm_ways])
-
-our_root = ET.parse(sys.argv[1])
-our_ways = make_ways(our_root)
-
-pairs = []
-for way in our_ways:
-    index = osm_tree.query([way.avg_point])[1][0]
-    pairs.append([way, osm_ways[index]])
-
-replace_pairs = []
-for pair in pairs:
+def jaccard_similarity(pair):
     intersect = pair[0].polygon & pair[1].polygon
     union = pair[0].polygon | pair[1].polygon
     jaccard = intersect.area() / union.area()
     if jaccard >= float(sys.argv[2]) / 100:
-        replace_pairs.append(pair)
+        return pair
     else:
-        replace_pairs.append([pair[0], None])
+        return [pair[0], None]
 
-josm_root = ET.Element('osm', {'version': "0.6", 'generator': "gen_josm"})
-e_bound = ET.SubElement(josm_root, 'bounds', {'minlat': bounds[0], 'minlon': bounds[1], 'maxlat': bounds[2], 'maxlon': bounds[3], 'origin': 'gen_josm'})
+def generate_josm(pairs):
+    # Make root of output xml
+    josm_root = ET.Element('osm', {'version': "0.6", 'generator': "gen_josm"})
+    e_bound = ET.SubElement(josm_root, 'bounds', {'minlat': largest_bound[0], 'minlon': largest_bound[1], 'maxlat': largest_bound[2], 'maxlon': largest_bound[3], 'origin': 'gen_josm'})
 
-place_id = -1
-for pair in replace_pairs:
-    nodes = []
-    for node in pair[0].nodes:
-        e_node = ET.SubElement(josm_root, 'node', node.attrib)
-        e_node.attrib['id'] = str(place_id)
-        nodes.append(e_node)
-        place_id -= 1
-        for tag in node.findall('tag'):
-            e_tag = ET.SubElement(e_node, 'tag', tag.attrib)
+    # Generate nodes then ways in output xml
+    # place_id is a new id (JOSM specifies a negative id as a new entry
+    # TODO regenerate relationships
+    place_id = -1
+    for pair in replace_pairs:
+        nodes = []
+        for node in pair[0].nodes:
+            e_node = ET.SubElement(josm_root, 'node', node.attrib)
             e_node.attrib['id'] = str(place_id)
+            nodes.append(e_node)
             place_id -= 1
-    way = ET.SubElement(josm_root, 'way', pair[0].attrib)
-    way.attrib['id'] = str(place_id)
-    place_id -= 1
-    for nd in nodes:
-        e_nd = ET.SubElement(way, 'nd', {'ref': nd.attrib['id']})
-    for key in pair[0].tags:
-        e_tag = ET.SubElement(way, 'tag', {'k': key, 'v': pair[0].tags[key]})
-    if pair[1] is not None:
-        for node in pair[1].nodes:
-            d_node = ET.SubElement(josm_root, 'node', {'id': node.attrib['id']})
-            d_node.attrib['action'] = 'delete'
-        d_way = ET.SubElement(josm_root, 'way', {'id': pair[1].attrib['id']})
-        d_way.attrib['action'] = 'delete'
+            for tag in node.findall('tag'):
+                e_tag = ET.SubElement(e_node, 'tag', tag.attrib)
+                e_node.attrib['id'] = str(place_id)
+                place_id -= 1
+        way = ET.SubElement(josm_root, 'way', pair[0].attrib)
+        way.attrib['id'] = str(place_id)
+        place_id -= 1
+        for nd in nodes:
+            e_nd = ET.SubElement(way, 'nd', {'ref': nd.attrib['id']})
+        for key in pair[0].tags:
+            e_tag = ET.SubElement(way, 'tag', {'k': key, 'v': pair[0].tags[key]})
+        if pair[1] is not None:
+            for node in pair[1].nodes:
+                d_node = ET.SubElement(josm_root, 'node', {'id': node.attrib['id']})
+                d_node.attrib['action'] = 'delete'
+            d_way = ET.SubElement(josm_root, 'way', {'id': pair[1].attrib['id']})
+            d_way.attrib['action'] = 'delete'
 
+    return josm_root
 
-josm_xml = xml.dom.minidom.parseString(ET.tostring(josm_root))
-print josm_xml.toprettyxml(),
+if __name__ == "__main__":
+    # Get API url
+    boundb_apiurl = get_api_url()
+
+    # Bounding boxes for campuses
+    # Parse input data
+    our_root = ET.parse(sys.argv[1])
+    our_ways = make_ways(our_root)
+
+    # Find the bounding box around the given data
+    # and split it up into valid locations
+    largest_bound = largest_box([way.get_bounds() for way in our_ways])
+    locations = get_subdivisions(largest_bound, boundb_apiurl, our_ways)
+    print locations
+
+    # Make an API call for each location and parse the xml returned
+    responses = [urllib2.urlopen(boundb_apiurl.format(*location)) for location in locations]
+    roots = [ET.fromstring(response.read()) for response in responses]
+
+    osm_ways = []
+
+    # Get all the ways from the xml
+    for root in roots:
+        osm_ways.extend(make_ways(root))
+
+    # Make a spatial tree from way average points
+    osm_tree = spatial.KDTree([way.avg_point for way in osm_ways])
+
+    # Find nearest points and make pairs of guesses based on this
+    pairs = []
+    for way in our_ways:
+        index = osm_tree.query([way.avg_point])[1][0]
+        pairs.append([way, osm_ways[index]])
+
+    # Find pairs that are >= the entered amount similar
+    # TODO check for other places nodes are used for deletions
+    replace_pairs = map(jaccard_similarity, pairs)
+
+    josm_root = generate_josm(replace_pairs)
+
+    # Make the xml pretty and print it out
+    josm_xml = xml.dom.minidom.parseString(ET.tostring(josm_root))
+    print josm_xml.toprettyxml(),
