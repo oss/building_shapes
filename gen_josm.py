@@ -46,7 +46,6 @@ class Way():
                 box[3] = lat
         return box
 
-
 def make_ways(root):
     """Build way objects from the root of an osm file"""
     nodes = {}
@@ -89,7 +88,7 @@ def get_subdivisions(box, url, ways):
     boxes = []
     try:
         urllib2.urlopen(url.format(*box))
-        boxes.extend(box)
+        boxes.append(box)
     except urllib2.HTTPError:
         center = [(x1 - x0) / 2.0, (y1 - y0) / 2.0]
         subdivisions = [
@@ -99,7 +98,7 @@ def get_subdivisions(box, url, ways):
                         [center[0], y0, x1, center[1]]]
         for subdivision in subdivisions:
             if anything_inside(subdivision, ways):
-                boxes.extend(get_subdivisions(subdivision, url, ways))
+                boxes.append(get_subdivisions(subdivision, url, ways))
     return boxes
 
 
@@ -112,6 +111,10 @@ def get_api_url(debug=False):
     return base_apiurl + '/api/0.6/map?bbox={0},{1},{2},{3}'
 
 def jaccard_similarity(pair):
+    """Find the similarities between a group of ways.
+    Returns a pair of ways; the first one replaces the right. The second value is none
+    if the pairs do not match
+    """
     intersect = pair[0].polygon & pair[1].polygon
     union = pair[0].polygon | pair[1].polygon
     jaccard = intersect.area() / union.area()
@@ -120,10 +123,27 @@ def jaccard_similarity(pair):
     else:
         return [pair[0], None]
 
+def make_relations(root, pair):
+    changed = False
+    relations = root.findall('relation')
+    for relation in relations:
+        members = relation.findall('member')
+        for member in members:
+            if member.attrib['type'] == "way" and member.attrib['ref'] == way[1].attrib['id']:
+                member.attrib['ref'] = way[0].attrib['id']
+                changed = True
+    if changed:
+        relation.attrib['action'] = 'modify'
+        return relation
+    return None
+
 def generate_josm(pairs):
+    """Make josm from pairs of ways to be replaced
+    Returns the root node in an ElementTree
+    """
     # Make root of output xml
     josm_root = ET.Element('osm', {'version': "0.6", 'generator': "gen_josm"})
-    e_bound = ET.SubElement(josm_root, 'bounds', {'minlat': largest_bound[0], 'minlon': largest_bound[1], 'maxlat': largest_bound[2], 'maxlon': largest_bound[3], 'origin': 'gen_josm'})
+    ET.SubElement(josm_root, 'bounds', {'minlat': largest_bound[0], 'minlon': largest_bound[1], 'maxlat': largest_bound[2], 'maxlon': largest_bound[3], 'origin': 'gen_josm'})
 
     # Generate nodes then ways in output xml
     # place_id is a new id (JOSM specifies a negative id as a new entry
@@ -137,21 +157,21 @@ def generate_josm(pairs):
             nodes.append(e_node)
             place_id -= 1
             for tag in node.findall('tag'):
-                e_tag = ET.SubElement(e_node, 'tag', tag.attrib)
+                ET.SubElement(e_node, 'tag', tag.attrib)
                 e_node.attrib['id'] = str(place_id)
                 place_id -= 1
         way = ET.SubElement(josm_root, 'way', pair[0].attrib)
         way.attrib['id'] = str(place_id)
         place_id -= 1
         for nd in nodes:
-            e_nd = ET.SubElement(way, 'nd', {'ref': nd.attrib['id']})
+            ET.SubElement(way, 'nd', {'ref': nd.attrib['id']})
         for key in pair[0].tags:
-            e_tag = ET.SubElement(way, 'tag', {'k': key, 'v': pair[0].tags[key]})
+            ET.SubElement(way, 'tag', {'k': key, 'v': pair[0].tags[key]})
         if pair[1] is not None:
             for node in pair[1].nodes:
-                d_node = ET.SubElement(josm_root, 'node', {'id': node.attrib['id']})
+                d_node = ET.SubElement(josm_root, 'node', {'id': node.attrib['id'], 'version': node.attrib['version']})
                 d_node.attrib['action'] = 'delete'
-            d_way = ET.SubElement(josm_root, 'way', {'id': pair[1].attrib['id']})
+            d_way = ET.SubElement(josm_root, 'way', {'id': pair[1].attrib['id'], 'version': node.attrib['version']})
             d_way.attrib['action'] = 'delete'
 
     return josm_root
@@ -169,7 +189,6 @@ if __name__ == "__main__":
     # and split it up into valid locations
     largest_bound = largest_box([way.get_bounds() for way in our_ways])
     locations = get_subdivisions(largest_bound, boundb_apiurl, our_ways)
-    print locations
 
     # Make an API call for each location and parse the xml returned
     responses = [urllib2.urlopen(boundb_apiurl.format(*location)) for location in locations]
@@ -193,8 +212,11 @@ if __name__ == "__main__":
     # Find pairs that are >= the entered amount similar
     # TODO check for other places nodes are used for deletions
     replace_pairs = map(jaccard_similarity, pairs)
+    modified_relations = []
+    for root in roots:
+        modified_relations.extend(make_relations(root, [pair for pair in pairs if pair[1] is not None]))
 
-    josm_root = generate_josm(replace_pairs)
+    josm_root = generate_josm(replace_pairs, modified_relations)
 
     # Make the xml pretty and print it out
     josm_xml = xml.dom.minidom.parseString(ET.tostring(josm_root))
