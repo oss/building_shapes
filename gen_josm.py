@@ -1,8 +1,8 @@
 import urllib2
 import xml.etree.ElementTree as ET
 import xml.dom.minidom
-import sys
 import Polygon, Polygon.IO
+import argparse
 from scipy import spatial
 
 
@@ -110,7 +110,7 @@ def get_api_url(debug=False):
     base_apiurl = 'http://api.openstreetmap.org' if debug == False else 'http://api06.dev.openstreetmap.org'
     return base_apiurl + '/api/0.6/map?bbox={0},{1},{2},{3}'
 
-def jaccard_similarity(pair):
+def jaccard_similarity(pair, similarity):
     """Find the similarities between a group of ways.
     Returns a pair of ways; the first one replaces the right. The second value is none
     if the pairs do not match
@@ -118,7 +118,7 @@ def jaccard_similarity(pair):
     intersect = pair[0].polygon & pair[1].polygon
     union = pair[0].polygon | pair[1].polygon
     jaccard = intersect.area() / union.area()
-    if jaccard >= float(sys.argv[2]) / 100:
+    if jaccard >= float(similarity) / 100:
         return pair
     else:
         return [pair[0], None]
@@ -190,12 +190,17 @@ def generate_josm(pairs):
     return josm_root
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("input_osm", help="The osm file you want to use in OSM")
+    parser.add_argument("similarity", help="The similarity level between builings between 0 and 100", type=int)
+    args = parser.parse_args()
+
     # Get API url
     boundb_apiurl = get_api_url()
 
     # Bounding boxes for campuses
     # Parse input data
-    our_root = ET.parse(sys.argv[1])
+    our_root = ET.parse(args.input_osm)
     our_ways = make_ways(our_root)
 
     # Find the bounding box around the given data
@@ -224,7 +229,7 @@ if __name__ == "__main__":
 
     # Find pairs that are >= the entered amount similar
     # TODO check for other places nodes are used for deletions
-    replace_pairs = map(jaccard_similarity, pairs)
+    replace_pairs = [jaccard_similarity(pair, args.similarity) for pair in pairs]
     for root in roots:
         for pair in replace_pairs:
             pair.append(make_relations(root, pair))
