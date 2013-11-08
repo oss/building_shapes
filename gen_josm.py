@@ -38,7 +38,7 @@ class Way():
             lat = float(node.attrib['lat'])
             if lon <= box[0]:
                 box[0] = lon
-            if  lat <= box[1]:
+            if lat <= box[1]:
                 box[1] = lat
             if lon >= box[2]:
                 box[2] = lon
@@ -124,18 +124,17 @@ def jaccard_similarity(pair):
         return [pair[0], None]
 
 def make_relations(root, pair):
-    changed = False
-    relations = root.findall('relation')
-    for relation in relations:
-        members = relation.findall('member')
-        for member in members:
-            if member.attrib['type'] == "way" and member.attrib['ref'] == way[1].attrib['id']:
-                member.attrib['ref'] = way[0].attrib['id']
-                changed = True
-    if changed:
-        relation.attrib['action'] = 'modify'
-        return relation
-    return None
+    ret = []
+    if pair[1] is not None:
+        relations = root.findall('relation')
+        for relation in relations:
+            members = relation.findall('member')
+            for member in members:
+                if member.attrib['type'] == "way" and member.attrib['ref'] == pair[1].attrib['id']:
+                    relation.attrib['action'] = 'modify'
+                    ret.append(relation)
+                    break
+    return ret
 
 def generate_josm(pairs):
     """Make josm from pairs of ways to be replaced
@@ -149,7 +148,7 @@ def generate_josm(pairs):
     # place_id is a new id (JOSM specifies a negative id as a new entry
     # TODO regenerate relationships
     place_id = -1
-    for pair in replace_pairs:
+    for pair in pairs:
         nodes = []
         for node in pair[0].nodes:
             e_node = ET.SubElement(josm_root, 'node', node.attrib)
@@ -162,6 +161,10 @@ def generate_josm(pairs):
                 place_id -= 1
         way = ET.SubElement(josm_root, 'way', pair[0].attrib)
         way.attrib['id'] = str(place_id)
+        for relation in pair[2]:
+            for member in relation.findall('member'):
+                if member.attrib['type'] == "way" and member.attrib['ref'] == pair[1].attrib['id']:
+                    member.attrib['ref'] = way.attrib['id']
         place_id -= 1
         for nd in nodes:
             ET.SubElement(way, 'nd', {'ref': nd.attrib['id']})
@@ -173,6 +176,16 @@ def generate_josm(pairs):
                 d_node.attrib['action'] = 'delete'
             d_way = ET.SubElement(josm_root, 'way', {'id': pair[1].attrib['id'], 'version': node.attrib['version']})
             d_way.attrib['action'] = 'delete'
+    uni_relation = []
+    for pair in pairs:
+        for relation in pair[2]:
+            if int(relation.attrib['id']) not in uni_relation:
+                uni_relation.append(int(relation.attrib['id']))
+                e_rela = ET.SubElement(josm_root, 'relation', relation.attrib)
+                for member in relation.findall('member'):
+                    ET.SubElement(e_rela, 'member', member.attrib)
+                for tag in relation.findall('tag'):
+                    ET.SubElement(e_rela, 'tag', tag.attrib)
 
     return josm_root
 
@@ -212,11 +225,11 @@ if __name__ == "__main__":
     # Find pairs that are >= the entered amount similar
     # TODO check for other places nodes are used for deletions
     replace_pairs = map(jaccard_similarity, pairs)
-    modified_relations = []
     for root in roots:
-        modified_relations.extend(make_relations(root, [pair for pair in pairs if pair[1] is not None]))
+        for pair in replace_pairs:
+            pair.append(make_relations(root, pair))
 
-    josm_root = generate_josm(replace_pairs, modified_relations)
+    josm_root = generate_josm(replace_pairs)
 
     # Make the xml pretty and print it out
     josm_xml = xml.dom.minidom.parseString(ET.tostring(josm_root))
