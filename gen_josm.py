@@ -172,9 +172,9 @@ def generate_josm(pairs):
             ET.SubElement(way, 'tag', {'k': key, 'v': pair[0].tags[key]})
         if pair[1] is not None:
             for node in pair[1].nodes:
-                d_node = ET.SubElement(josm_root, 'node', {'id': node.attrib['id'], 'version': node.attrib['version']})
+                d_node = ET.SubElement(josm_root, 'node', node.attrib)
                 d_node.attrib['action'] = 'delete'
-            d_way = ET.SubElement(josm_root, 'way', {'id': pair[1].attrib['id'], 'version': node.attrib['version']})
+            d_way = ET.SubElement(josm_root, 'way', pair[1].attrib)
             d_way.attrib['action'] = 'delete'
     uni_relation = []
     for pair in pairs:
