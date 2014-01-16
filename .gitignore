@@ -1,0 +1,4 @@
+*.swp
+*.osm
+*.pyc
+!poly_output.1.osm
